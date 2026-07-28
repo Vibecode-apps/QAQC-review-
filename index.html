@@ -920,9 +920,12 @@ Provide a comprehensive violation report with specific code references and actio
     try {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' },
+        headers: {
+          'Content-Type': 'application/json',
+          'anthropic-dangerous-direct-browser-access': 'true'
+        },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 4000,
           system: systemPrompt,
           messages: [{
@@ -935,13 +938,37 @@ Provide a comprehensive violation report with specific code references and actio
         })
       });
 
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        const msg = errData?.error?.message || `HTTP ${response.status}: ${response.statusText}`;
+        throw new Error(msg);
+      }
+
       const data = await response.json();
+
+      if (!data.content || data.content.length === 0) {
+        throw new Error('Empty response from API');
+      }
+
       const rawText = data.content.map(i => i.text || '').join('');
-      const clean = rawText.replace(/```json|```/g, '').trim();
-      const result = JSON.parse(clean);
+      const clean = rawText.replace(/```json[\s\S]*?```|```[\s\S]*?```/g, m => m.replace(/```json|```/g, '')).trim();
+
+      let result;
+      try {
+        result = JSON.parse(clean);
+      } catch(parseErr) {
+        // Try to extract JSON object from response
+        const jsonMatch = clean.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          result = JSON.parse(jsonMatch[0]);
+        } else {
+          throw new Error('Could not parse AI response as JSON. Raw: ' + clean.slice(0, 200));
+        }
+      }
+
       renderReport(result, jurisdiction, codeEdition);
     } catch (err) {
-      console.error(err);
+      console.error('Analysis error:', err);
       renderError(err.message);
     }
 
@@ -1076,4 +1103,3 @@ Provide a comprehensive violation report with specific code references and actio
 </script>
 </body>
 </html>
-
